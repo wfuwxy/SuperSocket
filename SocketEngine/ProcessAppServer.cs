@@ -23,7 +23,7 @@ namespace SuperSocket.SocketEngine
     [StatusInfo(StatusInfoKeys.MaxCompletionPortThreads, Name = "Maximum Completion Port Threads", Format = "{0}", DataType = typeof(double), Order = 514)]
     partial class ProcessAppServer : IsolationAppServer, IProcessServer
     {
-        private const string m_AgentUri = "ipc://{0}/WorkItemAgent.rem";
+        private const string m_AgentUri = "ipc://{0}/ManagedAppAgent.rem";
 
         private const string m_PortNameTemplate = "{0}[SuperSocket.Agent:{1}]";
 
@@ -46,13 +46,15 @@ namespace SuperSocket.SocketEngine
 
         private ProcessPerformanceCounterHelper m_PerformanceCounterHelper;
 
+        private bool m_AutoStartAfterUnexpectedShutdown = true;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="ProcessAppServer" /> class.
         /// </summary>
         /// <param name="serverTypeName">Name of the server type.</param>
-        /// <param name="serverStatusMetadata">The server status metadata.</param>
-        public ProcessAppServer(string serverTypeName, StatusInfoAttribute[] serverStatusMetadata)
-            : base(serverTypeName, serverStatusMetadata)
+        /// <param name="serverMetadata">The server metadata.</param>
+        public ProcessAppServer(string serverTypeName, AppServerMetadata serverMetadata)
+            : base(serverTypeName, serverMetadata)
         {
 
         }
@@ -74,7 +76,18 @@ namespace SuperSocket.SocketEngine
             }
         }
 
-        protected override IWorkItemBase Start()
+        public override bool Setup(IBootstrap bootstrap, IServerConfig config)
+        {
+            if (!base.Setup(bootstrap, config))
+                return false;
+
+            if ("false".Equals(config.Options.GetValue("autoStartAfterUnexpectedShutdown"), StringComparison.OrdinalIgnoreCase))
+                m_AutoStartAfterUnexpectedShutdown = false;
+
+            return true;
+        }
+
+        protected override IManagedAppBase Start()
         {
             var currentDomain = AppDomain.CurrentDomain;
             var workingDir = Path.Combine(Path.Combine(currentDomain.BaseDirectory, WorkingDir), Name);
@@ -137,17 +150,25 @@ namespace SuperSocket.SocketEngine
 
             var remoteUri = string.Format(m_AgentUri, portName);
 
-            IRemoteWorkItem appServer = null;
+            IRemoteManagedApp appServer = null;
 
             if (process == null)
             {
-                if (!m_ProcessWorkEvent.WaitOne(10000))
+                var startTimeOut = 0;
+
+                int.TryParse(Config.Options.GetValue("startTimeOut", "0"), out startTimeOut);
+
+                if (startTimeOut <= 0)
+                {
+                    startTimeOut = 10;
+                }
+
+                if (!m_ProcessWorkEvent.WaitOne(startTimeOut * 1000))
                 {
                     ShutdownProcess();
                     OnExceptionThrown(new Exception("The remote work item was timeout to setup!"));
                     return null;
                 }
-
                 if (!"Ok".Equals(m_ProcessWorkStatus, StringComparison.OrdinalIgnoreCase))
                 {
                     OnExceptionThrown(new Exception("The Agent process didn't start successfully!"));
@@ -170,7 +191,7 @@ namespace SuperSocket.SocketEngine
                 try
                 {
                     //Setup and then start the remote server instance
-                    ret = appServer.Setup(ServerTypeName, "ipc://" + bootstrapIpcPort + "/Bootstrap.rem", currentDomain.BaseDirectory, ServerConfig, Factories);
+                    ret = appServer.Setup(ServerTypeName, "ipc://" + bootstrapIpcPort + "/Bootstrap.rem", currentDomain.BaseDirectory, ServerConfig);
                 }
                 catch (Exception e)
                 {
@@ -217,11 +238,11 @@ namespace SuperSocket.SocketEngine
             return appServer;
         }
 
-        IRemoteWorkItem GetRemoteServer(string remoteUri)
+        IRemoteManagedApp GetRemoteServer(string remoteUri)
         {
             try
             {
-                return (IRemoteWorkItem)Activator.GetObject(typeof(IRemoteWorkItem), remoteUri);
+                return (IRemoteManagedApp)Activator.GetObject(typeof(IRemoteManagedApp), remoteUri);
             }
             catch(Exception e)
             {
@@ -269,10 +290,10 @@ namespace SuperSocket.SocketEngine
             m_WorkingProcess = null;
             m_ProcessWorkStatus = string.Empty;
 
-            if (unexpectedShutdown)
+            if (unexpectedShutdown && m_AutoStartAfterUnexpectedShutdown)
             {
                 //auto restart if meet a unexpected shutdown
-                ((IWorkItemBase)this).Start();
+                ((IManagedAppBase)this).Start();
             }
         }
 

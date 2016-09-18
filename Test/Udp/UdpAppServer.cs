@@ -6,7 +6,7 @@ using SuperSocket.Dlr;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Command;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
 using SuperSocket.ProtoBase;
 using SuperSocket.SocketEngine;
 using SuperSocket.SocketBase.Protocol;
@@ -23,7 +23,7 @@ namespace SuperSocket.Test.Udp
 
         void ITestSetup.Setup(IRootConfig rootConfig, IServerConfig serverConfig)
         {
-            base.Setup(rootConfig, serverConfig, null, null, new ConsoleLogFactory(), null);
+            base.Setup(rootConfig, serverConfig, null, new ConsoleLoggerFactory(), null);
         }
     }
 }

@@ -28,20 +28,17 @@ namespace SuperSocket.Test.Protocol
 
             }
 
-            public override StringPackageInfo ResolvePackage(IList<ArraySegment<byte>> packageData)
+            public override StringPackageInfo ResolvePackage(IBufferStream bufferStream)
             {
-                using (var reader = this.GetBufferReader(packageData))
+                var length = bufferStream.Length;
+
+                if (length < 20)
                 {
-                    var length = reader.Length;
-
-                    if (length < 20)
-                    {
-                        Console.WriteLine("Ignore request");
-                        return null;
-                    }
-
-                    return new StringPackageInfo(reader.Skip(2).ReadString((int)length - 4, Encoding.ASCII), m_Parser);
+                    Console.WriteLine("Ignore request");
+                    return null;
                 }
+
+                return new StringPackageInfo(bufferStream.Skip(2).ReadString((int)length - 4, Encoding.ASCII), m_Parser);
             }
         }
 

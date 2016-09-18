@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
 using System.Net;
 
 namespace SuperSocket.SocketBase
@@ -41,7 +41,7 @@ namespace SuperSocket.SocketBase
         /// <summary>
         /// Gets all the app servers running in this bootstrap
         /// </summary>
-        IEnumerable<IWorkItem> AppServers { get; }
+        IEnumerable<IManagedApp> AppServers { get; }
 
         /// <summary>
         /// Gets the config.
@@ -73,17 +73,17 @@ namespace SuperSocket.SocketBase
         /// <summary>
         /// Initializes the bootstrap with the configuration
         /// </summary>
-        /// <param name="logFactory">The log factory.</param>
+        /// <param name="loggerFactory">The logger factory.</param>
         /// <returns></returns>
-        bool Initialize(ILogFactory logFactory);
+        bool Initialize(ILoggerFactory loggerFactory);
 
         /// <summary>
         /// Initializes the bootstrap with the configuration
         /// </summary>
         /// <param name="serverConfigResolver">The server config resolver.</param>
-        /// <param name="logFactory">The log factory.</param>
+        /// <param name="loggerFactory">The logger factory.</param>
         /// <returns></returns>
-        bool Initialize(Func<IServerConfig, IServerConfig> serverConfigResolver, ILogFactory logFactory);
+        bool Initialize(Func<IServerConfig, IServerConfig> serverConfigResolver, ILoggerFactory loggerFactory);
 
         /// <summary>
         /// Starts this bootstrap.

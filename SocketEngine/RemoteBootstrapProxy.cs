@@ -4,22 +4,23 @@ using System.Linq;
 using System.Text;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
+using SuperSocket.SocketBase.Metadata;
 
 namespace SuperSocket.SocketEngine
 {
     class RemoteBootstrapProxy : MarshalByRefObject, IBootstrap
     {
-        class ServerProxy : MarshalByRefObject, IWorkItem
+        class ServerProxy : MarshalByRefObject, IManagedApp
         {
-            private IWorkItem m_Server;
+            private IManagedApp m_Server;
 
-            public ServerProxy(IWorkItem server)
+            public ServerProxy(IManagedApp server)
             {
                 m_Server = server;
             }
 
-            public bool Setup(IBootstrap bootstrap, IServerConfig config, SocketBase.Provider.ProviderFactoryInfo[] factories)
+            public bool Setup(IBootstrap bootstrap, IServerConfig config)
             {
                 throw new NotSupportedException();
             }
@@ -32,6 +33,11 @@ namespace SuperSocket.SocketEngine
             public string Name
             {
                 get { return m_Server.Name; }
+            }
+
+            public void ReportPotentialConfigChange(IServerConfig config)
+            {
+                m_Server.ReportPotentialConfigChange(config);
             }
 
             public bool Start()
@@ -49,7 +55,7 @@ namespace SuperSocket.SocketEngine
                 get { throw new NotSupportedException(); }
             }
 
-            public SocketBase.Metadata.StatusInfoAttribute[] GetServerStatusMetadata()
+            public AppServerMetadata GetAppServerMetadata()
             {
                 throw new NotSupportedException();
             }
@@ -67,7 +73,7 @@ namespace SuperSocket.SocketEngine
 
         private IBootstrap m_Bootstrap;
 
-        private List<IWorkItem> m_Servers = new List<IWorkItem>();
+        private List<IManagedApp> m_Servers = new List<IManagedApp>();
 
         public RemoteBootstrapProxy()
         {
@@ -82,7 +88,7 @@ namespace SuperSocket.SocketEngine
             }
         }
 
-        public IEnumerable<IWorkItem> AppServers
+        public IEnumerable<IManagedApp> AppServers
         {
             get { return m_Servers; }
         }
@@ -107,12 +113,12 @@ namespace SuperSocket.SocketEngine
             throw new NotSupportedException();
         }
 
-        public bool Initialize(ILogFactory logFactory)
+        public bool Initialize(ILoggerFactory loggerFactory)
         {
             throw new NotSupportedException();
         }
 
-        public bool Initialize(Func<IServerConfig, IServerConfig> serverConfigResolver, ILogFactory logFactory)
+        public bool Initialize(Func<IServerConfig, IServerConfig> serverConfigResolver, ILoggerFactory loggerFactory)
         {
             throw new NotSupportedException();
         }

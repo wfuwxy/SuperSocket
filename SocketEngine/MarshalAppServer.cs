@@ -10,9 +10,9 @@ using SuperSocket.SocketBase.Metadata;
 
 namespace SuperSocket.SocketEngine
 {
-    class MarshalAppServer : MarshalByRefObject, IWorkItem, IStatusInfoSource
+    class MarshalAppServer : MarshalByRefObject, IManagedApp, IStatusInfoSource
     {
-        private IWorkItem m_AppServer;
+        private IManagedApp m_AppServer;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AppDomainAppServer"/> class.
@@ -21,7 +21,7 @@ namespace SuperSocket.SocketEngine
         public MarshalAppServer(string serviceTypeName)
         {
             var serviceType = Type.GetType(serviceTypeName);
-            m_AppServer = (IWorkItem)Activator.CreateInstance(serviceType);
+            m_AppServer = (IManagedApp)Activator.CreateInstance(serviceType);
         }
 
         /// <summary>
@@ -37,11 +37,20 @@ namespace SuperSocket.SocketEngine
         /// </summary>
         /// <param name="bootstrap">The bootstrap.</param>
         /// <param name="config">The socket server instance config.</param>
-        /// <param name="factories">The providers.</param>
         /// <returns></returns>
-        public bool Setup(IBootstrap bootstrap, IServerConfig config, ProviderFactoryInfo[] factories)
+        public bool Setup(IBootstrap bootstrap, IServerConfig config)
         {
-            return m_AppServer.Setup(bootstrap, config, factories);
+            return m_AppServer.Setup(bootstrap, config);
+        }
+
+        /// <summary>
+        /// Reports the potential configuration change.
+        /// </summary>
+        /// <param name="config">The server config which may be changed.</param>
+        /// <exception cref="System.NotImplementedException"></exception>
+        public void ReportPotentialConfigChange(IServerConfig config)
+        {
+            m_AppServer.ReportPotentialConfigChange(config);
         }
 
         /// <summary>
@@ -82,9 +91,9 @@ namespace SuperSocket.SocketEngine
             get { return m_AppServer.SessionCount; }
         }
 
-        StatusInfoAttribute[] IStatusInfoSource.GetServerStatusMetadata()
+        AppServerMetadata IServerMetadataProvider.GetAppServerMetadata()
         {
-            return m_AppServer.GetServerStatusMetadata();
+            return m_AppServer.GetAppServerMetadata();
         }
 
         StatusInfoCollection IStatusInfoSource.CollectServerStatus(StatusInfoCollection nodeStatus)

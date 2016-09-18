@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using SuperSocket.SocketBase.Pool;
+using SuperSocket.ProtoBase;
 
 namespace SuperSocket.SocketEngine
 {
@@ -26,8 +27,6 @@ namespace SuperSocket.SocketEngine
 
         class BufferStateItemEnumerable : IEnumerable<BufferState>
         {
-            IPool<BufferState> m_Pool;
-
             IBufferManager m_BufferManager;
 
             private int m_BufferSize;
@@ -36,7 +35,6 @@ namespace SuperSocket.SocketEngine
 
             public BufferStateItemEnumerable(IPool<BufferState> pool, IBufferManager bufferManager, int bufferSize, int count)
             {
-                m_Pool = pool;
                 m_BufferManager = bufferManager;
                 m_BufferSize = bufferSize;
                 m_Count = count;

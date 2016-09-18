@@ -30,8 +30,8 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="log4net">
-      <HintPath>..\..\Reference\log4net.dll</HintPath>
+    <Reference Include="AnyLog">
+      <HintPath>..\..\packages\AnyLog.0.1.8\lib\net45\AnyLog.dll</HintPath>
     </Reference>
     <Reference Include="nunit.framework">
       <HintPath>..\..\..\..\LogMaster4Net\master\Reference\nunit.framework.dll</HintPath>
@@ -60,6 +60,7 @@
     </Compile>
     <Compile Include="WebSocketHybi10Test.cs" />
     <Compile Include="WebSocketRawTest.cs" />
+    <Compile Include="WebSocketServer.cs" />
     <Compile Include="WebSocketTestBase.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -79,6 +80,10 @@
       <Project>{153fef72-191c-43d9-be71-2b351c7ac760}</Project>
       <Name>SuperSocket.SocketEngine.Net45</Name>
     </ProjectReference>
+    <ProjectReference Include="..\..\SocketService\SuperSocket.SocketService.Net45.csproj">
+      <Project>{b9113694-7226-4152-938d-3172b11571a1}</Project>
+      <Name>SuperSocket.SocketService.Net45</Name>
+    </ProjectReference>
     <ProjectReference Include="..\WebSocket\SuperSocket.WebSocket.Net45.csproj">
       <Project>{db6dd6e8-abde-4c4a-a3e2-df49c074433b}</Project>
       <Name>SuperSocket.WebSocket.Net45</Name>
@@ -88,6 +93,9 @@
     <None Include="Config\Basic.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Service Include="{82A7F48D-3B50-4B1E-B82E-3ADA8210C358}" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

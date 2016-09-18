@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.Composition.Hosting;
 using System.Linq;
 using System.Text;
 using SuperSocket.SocketBase.Config;
@@ -10,7 +11,7 @@ namespace SuperSocket.SocketBase
     /// <summary>
     /// An item can be started and stopped
     /// </summary>
-    public interface IWorkItemBase : IStatusInfoSource, ISystemEndPoint
+    public interface IWorkItemBase : IStatusInfoSource, IServerMetadataProvider, ISystemEndPoint
     {
         /// <summary>
         /// Gets the name.
@@ -23,6 +24,12 @@ namespace SuperSocket.SocketBase
         /// </summary>
         /// <returns>return true if start successfull, else false</returns>
         bool Start();
+
+        /// <summary>
+        /// Reports the potential configuration change.
+        /// </summary>
+        /// <param name="config">The server config which may be changed.</param>
+        void ReportPotentialConfigChange(IServerConfig config);
 
         /// <summary>
         /// Stops this server instance.
@@ -46,9 +53,8 @@ namespace SuperSocket.SocketBase
         /// </summary>
         /// <param name="bootstrap">The bootstrap.</param>
         /// <param name="config">The socket server instance config.</param>
-        /// <param name="factories">The factories.</param>
         /// <returns></returns>
-        bool Setup(IBootstrap bootstrap, IServerConfig config, ProviderFactoryInfo[] factories);
+        bool Setup(IBootstrap bootstrap, IServerConfig config);
 
         /// <summary>
         /// Gets the current state of the work item.

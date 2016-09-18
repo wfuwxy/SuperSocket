@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
 using SuperSocket.ProtoBase;
 using SuperSocket.SocketBase.Protocol;
 
@@ -50,7 +50,7 @@ namespace SuperSocket.Test.Protocol
             serverConfig.MaxRequestLength = 40960;
             serverConfig.DisableSessionSnapshot = true;
 
-            var setupResult = appServer.Setup(serverConfig, null, receiveFilterFactory, new ConsoleLogFactory(), null, null);
+            var setupResult = appServer.Setup(serverConfig, receiveFilterFactory, new ConsoleLoggerFactory(), null, null);
 
             Assert.IsTrue(setupResult);
             Assert.IsTrue(appServer.Start());

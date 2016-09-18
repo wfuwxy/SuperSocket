@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Threading;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
 
 namespace SuperSocket.SocketBase.Scheduler
 {
@@ -16,8 +16,6 @@ namespace SuperSocket.SocketBase.Scheduler
         private int m_MaxSleepingTimeOut = 500;
 
         private int m_MinSleepingTimeOut = 10;
-
-        private Thread m_WorkingThread;
 
         private int m_Stopped = 0;
 
@@ -31,7 +29,6 @@ namespace SuperSocket.SocketBase.Scheduler
             var thread = new Thread(RunWorkingThreads);
             thread.IsBackground = true;
             thread.Start();
-            m_WorkingThread = thread;
         }
 
         private void RunWorkingThreads()

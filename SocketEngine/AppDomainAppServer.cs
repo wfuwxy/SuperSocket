@@ -19,9 +19,9 @@ namespace SuperSocket.SocketEngine
         /// Initializes a new instance of the <see cref="AppDomainAppServer" /> class.
         /// </summary>
         /// <param name="serverTypeName">Name of the server type.</param>
-        /// <param name="serverStatusMetadata">The server status metadata.</param>
-        public AppDomainAppServer(string serverTypeName, StatusInfoAttribute[] serverStatusMetadata)
-            : base(serverTypeName, serverStatusMetadata)
+        /// <param name="serverMetadata">The server metadata.</param>
+        public AppDomainAppServer(string serverTypeName, AppServerMetadata serverMetadata)
+            : base(serverTypeName, serverMetadata)
         {
 
         }
@@ -32,9 +32,9 @@ namespace SuperSocket.SocketEngine
         /// <returns>
         /// return true if start successfull, else false
         /// </returns>
-        protected override IWorkItemBase Start()
+        protected override IManagedAppBase Start()
         {
-            IWorkItem appServer;
+            IManagedApp appServer;
 
             try
             {
@@ -44,7 +44,7 @@ namespace SuperSocket.SocketEngine
 
                 var marshalServerType = typeof(MarshalAppServer);
 
-                appServer = (IWorkItem)m_HostDomain.CreateInstanceAndUnwrap(marshalServerType.Assembly.FullName,
+                appServer = (IManagedApp)m_HostDomain.CreateInstanceAndUnwrap(marshalServerType.Assembly.FullName,
                         marshalServerType.FullName,
                         true,
                         BindingFlags.CreateInstance,
@@ -53,7 +53,7 @@ namespace SuperSocket.SocketEngine
                         null,
                         new object[0]);
 
-                if (!appServer.Setup(Bootstrap, ServerConfig, Factories))
+                if (!appServer.Setup(Bootstrap, ServerConfig))
                 {
                     OnExceptionThrown(new Exception("Failed to setup MarshalAppServer"));
                     return null;

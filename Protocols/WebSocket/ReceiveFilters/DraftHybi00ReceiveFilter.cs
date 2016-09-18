@@ -5,23 +5,31 @@ using System.Text;
 using SuperSocket.ProtoBase;
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
-using SuperSocket.SocketBase;
 
 namespace SuperSocket.WebSocket.ReceiveFilters
 {
-    class DraftHybi00ReceiveFilter : FixedSizeReceiveFilter<StringPackageInfo>
+    class DraftHybi00ReceiveFilter : FixedSizeReceiveFilter<WebSocketPackageInfo>, IWebSocketReceiveFilter
     {
+        protected WebSocketContext Context { get; private set; }
+
+        private const int c_Key3Len = 8;
+
         public DraftHybi00ReceiveFilter()
-            : base(8)
+            : base(c_Key3Len)
         {
 
         }
 
-        public override StringPackageInfo ResolvePackage(IList<ArraySegment<byte>> packageData)
+        public bool Handshake(WebSocketContext context)
         {
-            var session = AppContext.CurrentSession;
-            var bufferManager = session.AppServer.BufferManager;
-            var context = WebSocketContext.Get(session);
+            Context = context;
+            return true;
+        }
+
+        public override WebSocketPackageInfo ResolvePackage(IBufferStream bufferStream)
+        {
+            var context = Context;
+            var bufferManager = context.BufferManager;
 
             var responseBuilder = new StringBuilder();
 
@@ -34,39 +42,40 @@ namespace SuperSocket.WebSocket.ReceiveFilters
 
             responseBuilder.AppendFormatWithCrCf(WebSocketConstant.ResponseLocationLine, context.UriScheme, context.Host, context.Path);
 
-            var subProtocol = context.GetAvailableSubProtocol();
 
-            if (!string.IsNullOrEmpty(subProtocol))
-                responseBuilder.AppendFormatWithCrCf(WebSocketConstant.ResponseProtocolLine, subProtocol);
+            ///TODO: get available sub protocols
+            //var subProtocol = context.GetAvailableSubProtocol();
+
+            //if (!string.IsNullOrEmpty(subProtocol))
+            //  responseBuilder.AppendFormatWithCrCf(WebSocketConstant.ResponseProtocolLine, subProtocol);
 
             responseBuilder.AppendWithCrCf();
             var response = responseBuilder.ToString();
             var encoding = Encoding.UTF8;
-            var data = bufferManager.GetBuffer(encoding.GetMaxByteCount(response.Length));
-            var length = encoding.GetBytes(response, 0, response.Length, data, 0);
+
+            byte[] data = encoding.GetBytes(response);
+
+            context.Channel.Send(new ArraySegment<byte>(data));
 
             var secKey1 = context.HandshakeRequest.Get(WebSocketConstant.SecWebSocketKey1);
             var secKey2 = context.HandshakeRequest.Get(WebSocketConstant.SecWebSocketKey2);
 
             byte[] secret;
 
-            if(packageData.Count == 1)
-                secret = GetResponseSecurityKey(secKey1, secKey2, packageData[0]);
-            else
+            var secKey3 = bufferManager.GetBuffer(c_Key3Len);
+
+            try
             {
-                var secKey3 = bufferManager.GetBuffer(8);
-                try
-                {
-                    secret = GetResponseSecurityKey(secKey1, secKey2, new ArraySegment<byte>(secKey3));
-                }
-                finally
-                {
-                    bufferManager.ReturnBuffer(secKey3);
-                }
+                bufferStream.Read(secKey3, 0, c_Key3Len);
+                secret = GetResponseSecurityKey(secKey1, secKey2, new ArraySegment<byte>(secKey3, 0, c_Key3Len));
+            }
+            finally
+            {
+                bufferManager.ReturnBuffer(secKey3);
             }
 
-            session.SocketSession.TrySend(new ArraySegment<byte>(secret));
-            NextReceiveFilter = new DraftHybi00DataReceiveFilter();
+            context.Channel.Send(new ArraySegment<byte>(secret));
+            NextReceiveFilter = new DraftHybi00DataReceiveFilter(context);
             return null;
         }
 

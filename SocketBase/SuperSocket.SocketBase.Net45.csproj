@@ -28,6 +28,8 @@
     <BootstrapperEnabled>true</BootstrapperEnabled>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <TargetFrameworkProfile />
+    <SolutionDir Condition="$(SolutionDir) == '' Or $(SolutionDir) == '*Undefined*'">..\</SolutionDir>
+    <RestorePackages>true</RestorePackages>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -55,11 +57,12 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="log4net">
-      <HintPath>..\Reference\log4net.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="AnyLog, Version=0.1.8.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\AnyLog.0.1.8\lib\net45\AnyLog.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.ComponentModel.Composition" />
     <Reference Include="System.Core" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Xml" />
@@ -70,6 +73,7 @@
       <Link>GlobalAssemblyInfo.cs</Link>
     </Compile>
     <Compile Include="AppContext.cs" />
+    <Compile Include="AppServerBase.ConfigHotUpdate.cs" />
     <Compile Include="AppServerBase.Net45.cs" />
     <Compile Include="Async.cs" />
     <Compile Include="CommandExecutingContext.cs" />
@@ -77,8 +81,17 @@
     <Compile Include="Command\CommandInfo.cs" />
     <Compile Include="Command\CommandUpdateEventArgs.cs" />
     <Compile Include="Command\ICommandFilterProvider.cs" />
+    <Compile Include="CompositeTargets\CommandLoaderCompositeTarget.cs" />
+    <Compile Include="CompositeTargets\CompositeTargetBase.cs" />
+    <Compile Include="CompositeTargets\ConnectionFilterCompositeTarget.cs" />
+    <Compile Include="CompositeTargets\LoggerFactoryCompositeTarget.cs" />
+    <Compile Include="CompositeTargets\ReceiveFilterFactoryCompositeTarget.cs" />
+    <Compile Include="CompositeTargets\MultipleResultCompositeTarget.cs" />
+    <Compile Include="CompositeTargets\SingleResultCompositeTarget.cs" />
+    <Compile Include="CompositeTargets\SocketServerFactoryComositeTarget.cs" />
     <Compile Include="Config\BufferPoolConfig.cs" />
     <Compile Include="Config\CommandAssemblyConfig.cs" />
+    <Compile Include="Config\HotUpdateAttribute.cs" />
     <Compile Include="Config\IBufferPoolConfig.cs" />
     <Compile Include="Config\ICommandAssemblyConfig.cs" />
     <Compile Include="Config\IConfigurationSource.cs" />
@@ -95,50 +108,43 @@
     <Compile Include="Extensions.cs" />
     <Compile Include="IActiveConnector.cs" />
     <Compile Include="IBootstrap.cs" />
-    <Compile Include="ILoggerProvider.cs" />
+    <Compile Include="ICompositeTarget.cs" />
+    <Compile Include="IManagedApp.cs" />
     <Compile Include="INewSessionHandler.cs" />
     <Compile Include="ISessionContainer.cs" />
     <Compile Include="IsolationMode.cs" />
     <Compile Include="IStatusInfoSource.cs" />
     <Compile Include="ISystemEndPoint.cs" />
-    <Compile Include="IWorkItem.cs" />
-    <Compile Include="Logging\ConsoleLog.cs" />
-    <Compile Include="Logging\ConsoleLogFactory.cs" />
-    <Compile Include="Logging\ILog.cs" />
-    <Compile Include="Logging\ILogFactory.cs" />
-    <Compile Include="Logging\LocationInfo.cs" />
-    <Compile Include="Logging\Log4NetLog.cs" />
-    <Compile Include="Logging\Log4NetLogFactory.cs" />
-    <Compile Include="Logging\LogFactoryBase.cs" />
-    <Compile Include="Logging\LoggingData.cs" />
     <Compile Include="Metadata\AppServerMetadataTypeAttribute.cs" />
     <Compile Include="Metadata\CommandAttribute.cs" />
     <Compile Include="Metadata\CommandFilterAttribute.cs" />
-    <Compile Include="Metadata\DefaultAppServerMetadata.cs" />
+    <Compile Include="Metadata\AppServerMetadata.cs" />
     <Compile Include="Metadata\StatusInfoAttribute.cs" />
     <Compile Include="Metadata\StatusInfoKeys.cs" />
     <Compile Include="NodeStatus.cs" />
     <Compile Include="Pool\BufferItemCreator.cs" />
     <Compile Include="Pool\BufferManager.cs" />
     <Compile Include="Pool\BufferPool.cs" />
-    <Compile Include="Pool\IBufferManager.cs" />
     <Compile Include="Pool\IBufferPool.cs" />
     <Compile Include="Pool\IntelliPool.cs" />
     <Compile Include="Pool\IPool.cs" />
     <Compile Include="Pool\IPoolItemCreator.cs" />
-    <Compile Include="Pool\NullBufferManager.cs" />
     <Compile Include="ProtocolMode.cs" />
     <Compile Include="Protocol\CommandLineReceiveFilterFactory.cs" />
     <Compile Include="Protocol\CountSpliterReceiveFilter.cs" />
     <Compile Include="Protocol\CountSpliterReceiveFilterFactory.cs" />
+    <Compile Include="Protocol\DefaultProtoSender.cs" />
     <Compile Include="Protocol\DefaultReceiveFilterFactory.cs" />
+    <Compile Include="Protocol\EncodeProtoSender.cs" />
+    <Compile Include="Protocol\IProtocolFactory.cs" />
+    <Compile Include="Protocol\IProtoSender.cs" />
     <Compile Include="Protocol\IReceiveFilterFactory.cs" />
+    <Compile Include="Protocol\NewLineProtoTextEncoder.cs" />
     <Compile Include="Protocol\TerminatorReceiveFilter.cs" />
     <Compile Include="Protocol\TerminatorReceiveFilterFactory.cs" />
     <Compile Include="Protocol\UdpPackageInfo.cs" />
-    <Compile Include="Provider\ExportFactory.cs" />
-    <Compile Include="Provider\ProviderFactoryInfo.cs" />
-    <Compile Include="Provider\ProviderKey.cs" />
+    <Compile Include="Provider\IProviderMetadata.cs" />
+    <Compile Include="Provider\ProviderMetadataAttribute.cs" />
     <Compile Include="RequestHandler.cs" />
     <Compile Include="Config\IListenerConfig.cs" />
     <Compile Include="Config\ListenerConfig.cs" />
@@ -179,11 +185,13 @@
     <Compile Include="AppSession.cs" />
     <Compile Include="Command\StringCommandBase.cs" />
     <Compile Include="StatusInfoCollection.cs" />
+    <Compile Include="Utils\ISendingQueue.cs" />
     <Compile Include="Utils\ITransactionGroup.cs" />
     <Compile Include="Utils\ITransactionItem.cs" />
     <Compile Include="Utils\LightweightTransaction.cs" />
     <Compile Include="Utils\SendingQueue.cs" />
     <Compile Include="Utils\SendingQueueSourceCreator.cs" />
+    <Compile Include="Utils\SendingQueueV2.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Common\SuperSocket.Common.Net45.csproj">
@@ -196,26 +204,8 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <BootstrapperPackage Include=".NETFramework,Version=v4.0">
-      <Visible>False</Visible>
-      <ProductName>Microsoft .NET Framework 4 %28x86 and x64%29</ProductName>
-      <Install>true</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Net.Client.3.5">
-      <Visible>False</Visible>
-      <ProductName>.NET Framework 3.5 SP1 Client Profile</ProductName>
-      <Install>false</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
-      <Visible>False</Visible>
-      <ProductName>.NET Framework 3.5 SP1</ProductName>
-      <Install>false</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Windows.Installer.3.1">
-      <Visible>False</Visible>
-      <ProductName>Windows Installer 3.1</ProductName>
-      <Install>true</Install>
-    </BootstrapperPackage>
+    <None Include="packages.SuperSocket.SocketBase.Net45.config" />
+    <None Include="SuperSocket.SocketBase.Net45.csproj.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.Composition.Hosting;
+using System.IO;
 using System.Linq;
 using System.Text;
+using SuperSocket.SocketBase.Command;
 using SuperSocket.SocketBase.Metadata;
 using SuperSocket.SocketBase.Pool;
-using SuperSocket.SocketBase.Command;
 
 namespace SuperSocket.SocketBase
 {
@@ -20,45 +22,12 @@ namespace SuperSocket.SocketBase
         /// <param name="name">The name of the appserver instance.</param>
         /// <returns></returns>
         /// <exception cref="System.ArgumentNullException"></exception>
-        public static IWorkItem GetServerByName(this IBootstrap bootstrap, string name)
+        public static IManagedApp GetServerByName(this IBootstrap bootstrap, string name)
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentNullException("name");
 
             return bootstrap.AppServers.FirstOrDefault(s => name.Equals(s.Name, StringComparison.OrdinalIgnoreCase));
-        }
-
-        /// <summary>
-        /// Gets the status info metadata from the server type.
-        /// </summary>
-        /// <param name="serverType">Type of the server.</param>
-        /// <returns></returns>
-        /// <exception cref="System.ArgumentNullException"></exception>
-        public static StatusInfoAttribute[] GetStatusInfoMetadata(this Type serverType)
-        {
-            if (serverType == null)
-                throw new ArgumentNullException("serverType");
-
-            var attType = typeof(AppServerMetadataTypeAttribute);
-
-            while (true)
-            {
-                var atts = serverType.GetCustomAttributes(attType, false);
-
-                if (atts != null && atts.Length > 0)
-                {
-                    var serverMetadataTypeAtt = atts[0] as AppServerMetadataTypeAttribute;
-                    return serverMetadataTypeAtt
-                            .MetadataType
-                            .GetCustomAttributes(typeof(StatusInfoAttribute), true)
-                            .OfType<StatusInfoAttribute>().ToArray();
-                }
-
-                if (serverType.BaseType == null)
-                    return null;
-
-                serverType = serverType.BaseType;
-            }
         }
 
         /// <summary>
@@ -91,6 +60,54 @@ namespace SuperSocket.SocketBase
                 throw new Exception("Command key definition was not found.");
 
             return command.Name;
+        }
+
+        private const string CurrentAppDomainExportProviderKey = "CurrentAppDomainExportProvider";
+
+        /// <summary>
+        /// Gets the current application domain's export provider.
+        /// </summary>
+        /// <param name="appDomain">The application domain.</param>
+        /// <returns></returns>
+        public static ExportProvider GetCurrentAppDomainExportProvider(this AppDomain appDomain)
+        {
+            var exportProvider = appDomain.GetData(CurrentAppDomainExportProviderKey) as ExportProvider;
+
+            if (exportProvider != null)
+                return exportProvider;
+
+            var isolation = IsolationMode.None;
+            var isolationValue = appDomain.GetData(typeof(IsolationMode).Name);
+
+            if (isolationValue != null)
+                isolation = (IsolationMode)isolationValue;
+
+            var catalog = new AggregateCatalog();
+
+            catalog.Catalogs.Add(new AssemblyCatalog(typeof(IAppServer).Assembly));
+            catalog.Catalogs.Add(new DirectoryCatalog(AppDomain.CurrentDomain.BaseDirectory, "*.*"));
+
+            var webBinDir = string.Empty;
+
+            if (isolation != IsolationMode.None)
+            {
+                var root = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory).Parent.FullName;
+                catalog.Catalogs.Add(new DirectoryCatalog(root, "*.*"));
+                webBinDir = Path.Combine(root, "bin");
+            }
+            else
+            {
+                webBinDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bin");
+            }
+
+            if (Directory.Exists(webBinDir))
+                catalog.Catalogs.Add(new DirectoryCatalog(webBinDir, "*.*"));
+
+            exportProvider = new CompositionContainer(catalog);
+
+            appDomain.SetData(CurrentAppDomainExportProviderKey, exportProvider);
+
+            return exportProvider;
         }
     }
 }

@@ -1,12 +1,9 @@
 ﻿using SuperSocket.ProtoBase;
-using SuperSocket.SocketBase;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
-using SuperSocket.Common;
-using SuperSocket.WebSocket.OpHandlers;
+using SuperSocket.SocketBase;
 
 namespace SuperSocket.WebSocket
 {
@@ -16,7 +13,7 @@ namespace SuperSocket.WebSocket
 
         public bool Handshaked { get; set; }
 
-        public HttpHeaderInfo HandshakeRequest { get; private set; }
+        public HttpHeaderInfo HandshakeRequest { get; internal set; }
 
         public string Origin { get; private set; }
 
@@ -25,8 +22,6 @@ namespace SuperSocket.WebSocket
         public string Host { get; private set; }
 
         public string Path { get; private set; }
-
-        public IAppSession Session { get; private set; }
 
         private List<ArraySegment<byte>> m_Fragments;
 
@@ -44,7 +39,7 @@ namespace SuperSocket.WebSocket
         /// <value>
         /// The op code.
         /// </value>
-        public sbyte OpCode { get; internal set; }
+        public OpCode OpCode { get; internal set; }
 
         /// <summary>
         /// Gets the length of the payload.
@@ -72,28 +67,22 @@ namespace SuperSocket.WebSocket
                 fragment = fragments;
             }
 
-            var session = Session;
-            var server = session.AppServer;
-
-            var websocketServiceProvider = server.GetService<WebSocketServiceProvider>();
-
-            IOpHandler opHandler;
-
-            if(!websocketServiceProvider.OpHandlers.TryGetValue(OpCode, out opHandler))
-                return null; // bad OpCode
-
-            return opHandler.Handle(session, this, fragment);
+            throw new NotSupportedException();
         }
 
-        public WebSocketContext(IAppSession session, HttpHeaderInfo request)
-        {
-            Session = session;
-            HandshakeRequest = request;
-        }
+        public IBufferManager BufferManager { get; private set; }
 
-        public string GetAvailableSubProtocol()
+        internal ICommunicationChannel Channel { get; private set; }
+
+        public WebSocketContext(ICommunicationChannel channel, IBufferManager bufferManager)
         {
-            return HandshakeRequest.Get(WebSocketConstant.SecWebSocketProtocol);
+            BufferManager = bufferManager;
+            Channel = channel;
+
+            var session = channel as IAppSession;
+
+            if (session != null)
+                session.Items.Add(c_WebSocketContextKey, this);
         }
 
         public static WebSocketContext Get(IAppSession session)

@@ -10,7 +10,7 @@ using SuperSocket.ProtoBase;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Command;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
 using SuperSocket.SocketBase.Protocol;
 using SuperSocket.SocketEngine;
 
@@ -49,7 +49,7 @@ namespace SuperSocket.Test
 
         void ITestSetup.Setup(IRootConfig rootConfig, IServerConfig serverConfig)
         {            
-            base.Setup(rootConfig, serverConfig, null, null, new ConsoleLogFactory(), null);
+            base.Setup(rootConfig, serverConfig, null, new ConsoleLoggerFactory(), null);
         }
 
         internal bool SendWelcome { get; private set; }

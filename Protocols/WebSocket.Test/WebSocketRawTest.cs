@@ -8,9 +8,9 @@ using System.Text;
 using NUnit.Framework;
 using SuperSocket.ClientEngine.Protocol;
 using SuperSocket.Common;
+using SuperSocket.ProtoBase;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
 using SuperSocket.SocketEngine;
 using SuperSocket.WebSocket;
 using WebSocket.Test;
@@ -31,6 +31,8 @@ namespace SuperWebSocketTest
 
         public override void Setup()
         {
+            base.Setup();
+
             var appServer = AppServer;
 
             appServer.NewSessionConnected += appServer_NewSessionConnected;
@@ -68,6 +70,7 @@ namespace SuperWebSocketTest
             socket.Connect(address);
 
             stream = new NetworkStream(socket);
+            stream.ReadTimeout = 5000;
 
             var reader = new StreamReader(stream, m_Encoding, false);
             var writer = new StreamWriter(stream, m_Encoding, 1024 * 10);

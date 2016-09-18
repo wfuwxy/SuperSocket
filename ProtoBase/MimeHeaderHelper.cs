@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -32,7 +31,11 @@ namespace SuperSocket.ProtoBase
 
             var reader = new StringReader(headerData);
 
+#if !NET20
             var keyHash = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+#else
+            var keyHash = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+#endif
 
             while (!string.IsNullOrEmpty(line = reader.ReadLine()))
             {
@@ -71,7 +74,13 @@ namespace SuperSocket.ProtoBase
                 if (string.IsNullOrEmpty(key))
                     continue;
 
-                if (keyHash.Contains(key))
+#if !NET20
+                var existance = keyHash.Contains(key);
+#else
+                var existance = keyHash.ContainsKey(key);
+#endif
+
+                if (existance)
                 {
                     prevValue = header[key] + m_ValueSeparator + value;
                     header[key] = prevValue;
@@ -79,6 +88,11 @@ namespace SuperSocket.ProtoBase
                 else
                 {
                     header[key] = prevValue = value;
+#if !NET20
+                    keyHash.Add(key);
+#else
+                    keyHash.Add(key, key);
+#endif
                 }
 
                 prevKey = key;

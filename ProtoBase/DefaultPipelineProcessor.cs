@@ -12,13 +12,7 @@ namespace SuperSocket.ProtoBase
     public class DefaultPipelineProcessor<TPackageInfo> : IPipelineProcessor
         where TPackageInfo : IPackageInfo
     {
-        private IPackageHandler<TPackageInfo> m_PackageHandler;
-
         private IReceiveFilter<TPackageInfo> m_ReceiveFilter;
-
-        private IBufferRecycler m_BufferRecycler;
-
-        private static readonly IBufferRecycler s_NullBufferRecycler = new NullBufferRecycler();
 
         private BufferList m_ReceiveCache;
 
@@ -27,137 +21,162 @@ namespace SuperSocket.ProtoBase
         /// <summary>
         /// Initializes a new instance of the <see cref="DefaultPipelineProcessor{TPackageInfo}"/> class.
         /// </summary>
-        /// <param name="packageHandler">The package handler.</param>
         /// <param name="receiveFilter">The initializing receive filter.</param>
         /// <param name="maxPackageLength">The max package size.</param>
-        /// <param name="bufferRecycler">The buffer recycler.</param>
-        public DefaultPipelineProcessor(IPackageHandler<TPackageInfo> packageHandler, IReceiveFilter<TPackageInfo> receiveFilter, int maxPackageLength = 0, IBufferRecycler bufferRecycler = null)
+        public DefaultPipelineProcessor(IReceiveFilter<TPackageInfo> receiveFilter, int maxPackageLength = 0)
         {
-            m_PackageHandler = packageHandler;
             m_ReceiveFilter = receiveFilter;
-            m_BufferRecycler = bufferRecycler ?? s_NullBufferRecycler;
             m_ReceiveCache = new BufferList();
             m_MaxPackageLength = maxPackageLength;
         }
 
-        private void PushResetData(ArraySegment<byte> raw, int rest, IBufferState state)
+        private void PushResetData(ArraySegment<byte> raw, int rest)
         {
             var segment = new ArraySegment<byte>(raw.Array, raw.Offset + raw.Count - rest, rest);
-            m_ReceiveCache.Add(segment, state);
+            m_ReceiveCache.Add(segment);
         }
 
-        /// <summary>
-        /// Occurs when [new receive buffer required].
-        /// </summary>
-        public event EventHandler NewReceiveBufferRequired;
-
-        private void FireNewReceiveBufferRequired()
+        private IList<IPackageInfo> GetNotNullOne(IList<IPackageInfo> left, IList<IPackageInfo> right)
         {
-            var handler = NewReceiveBufferRequired;
+            if (left != null)
+                return left;
 
-            if (handler != null)
-                handler(this, EventArgs.Empty);
+            return right;
         }
+
 
         /// <summary>
         /// Processes the input segment.
         /// </summary>
         /// <param name="segment">The input segment.</param>
-        /// <param name="state">The buffer state.</param>
         /// <returns>
         /// the processing result
         /// </returns>
-        public virtual ProcessResult Process(ArraySegment<byte> segment, IBufferState state)
+        public virtual ProcessResult Process(ArraySegment<byte> segment)
         {
-            m_ReceiveCache.Add(segment, state);
+            var receiveCache = m_ReceiveCache;
+
+            receiveCache.Add(segment);
 
             var rest = 0;
 
+            var currentReceiveFilter = m_ReceiveFilter;
+
+            SingleItemList<IPackageInfo> singlePackage = null;
+
+            List<IPackageInfo> packageList = null;
+
             while (true)
             {
-                var packageInfo = m_ReceiveFilter.Filter(m_ReceiveCache, out rest);
+                var packageInfo = currentReceiveFilter.Filter(receiveCache, out rest);
 
-                if (m_ReceiveFilter.State == FilterState.Error)
+                if (currentReceiveFilter.State == FilterState.Error)
                 {
-                    m_BufferRecycler.Return(m_ReceiveCache.GetAllCachedItems(), 0, m_ReceiveCache.Count);
                     return ProcessResult.Create(ProcessState.Error);
                 }
 
                 if (m_MaxPackageLength > 0)
                 {
-                    var length = m_ReceiveCache.Total;
+                    var length = receiveCache.Total;
 
                     if (length > m_MaxPackageLength)
                     {
-                        m_BufferRecycler.Return(m_ReceiveCache.GetAllCachedItems(), 0, m_ReceiveCache.Count);
                         return ProcessResult.Create(ProcessState.Error, string.Format("Max package length: {0}, current processed length: {1}", m_MaxPackageLength, length));
                     }
                 }
 
-                //Receive continue
+
+                var nextReceiveFilter = currentReceiveFilter.NextReceiveFilter;
+
+                // don't reset the filter if no request is resolved
+                if(packageInfo != null)
+                    currentReceiveFilter.Reset();
+
+                if (nextReceiveFilter != null)
+                {
+                    currentReceiveFilter = nextReceiveFilter;
+                    m_ReceiveFilter = currentReceiveFilter;
+                }                    
+
+                // continue receive
                 if (packageInfo == null)
                 {
                     if (rest > 0)
                     {
-                        PushResetData(segment, rest, state);
+                        var last = receiveCache.Last;
+
+                        if(rest != last.Count)
+                        {
+                            PushResetData(segment, rest);
+                        }
+                        
                         continue;
                     }
 
-                    //Because the current buffer is cached, so new buffer is required for receiving
-                    FireNewReceiveBufferRequired();
-                    return ProcessResult.Create(ProcessState.Cached);
+                    return ProcessResult.Create(ProcessState.Cached, GetNotNullOne(packageList, singlePackage));
                 }
 
-                m_ReceiveFilter.Reset();
+                if (packageList != null)
+                {
+                    packageList.Add(packageInfo);
+                }
+                else if (singlePackage == null)
+                    singlePackage = new SingleItemList<IPackageInfo>(packageInfo);
+                else
+                {
+                    if (packageList == null)
+                        packageList = new List<IPackageInfo>();
 
-                var nextReceiveFilter = m_ReceiveFilter.NextReceiveFilter;
-
-                if (nextReceiveFilter != null)
-                    m_ReceiveFilter = nextReceiveFilter;
-
-                m_PackageHandler.Handle(packageInfo);
+                    packageList.Add(singlePackage[0]);
+                    packageList.Add(packageInfo);
+                    singlePackage = null;
+                }
 
                 if (packageInfo is IBufferedPackageInfo // is a buffered package
                         && (packageInfo as IBufferedPackageInfo).Data is BufferList) // and it uses receive buffer directly
                 {
                     // so we need to create a new receive buffer container to use
-                    m_ReceiveCache = new BufferList();
+                    m_ReceiveCache = receiveCache = new BufferList();
 
                     if (rest <= 0)
                     {
-                        return ProcessResult.Create(ProcessState.Cached);
+                        return ProcessResult.Create(ProcessState.Cached, GetNotNullOne(packageList, singlePackage));
                     }
                 }
                 else
                 {
-                    ReturnOtherThanLastBuffer();
+                    m_ReceiveCache.Clear();
 
                     if (rest <= 0)
                     {
-                        return ProcessResult.Create(ProcessState.Completed);
+                        return ProcessResult.Create(ProcessState.Completed, GetNotNullOne(packageList, singlePackage));
                     }
                 }
 
-                PushResetData(segment, rest, state);
+                PushResetData(segment, rest);
             }
         }
 
-        void ReturnOtherThanLastBuffer()
+
+        /// <summary>
+        /// cleanup the cached the buffer by resolving them into one package at the end of the piple line
+        /// </summary>
+        /// <returns>return the processing result</returns>
+        public ProcessResult CleanUp()
         {
-            var bufferList = m_ReceiveCache.GetAllCachedItems();
-            var count = bufferList.Count;
-            var lastBufferItem = bufferList[count - 1].Key.Array;
+            var currentReceiveFilter = m_ReceiveFilter as ICleanupReceiveFilter<TPackageInfo>;
 
-            for (var i = count - 2; i >= 0; i--)
-            {
-                if (bufferList[i].Key.Array != lastBufferItem)
-                {
-                    m_BufferRecycler.Return(bufferList, 0, i + 1);
-                    break;
-                }
-            }
+            if (currentReceiveFilter == null)
+                throw new Exception("The current receive filter doesn't support cleanup");
 
-            m_ReceiveCache.Clear();
+            var receiveCache = m_ReceiveCache;
+
+            var package = currentReceiveFilter.ResolvePackage(receiveCache);
+
+            if (m_ReceiveFilter.State == FilterState.Error)
+                return ProcessResult.Create(ProcessState.Error);
+
+            return ProcessResult.Create(ProcessState.Completed, new SingleItemList<IPackageInfo>(package));
         }
 
         /// <summary>

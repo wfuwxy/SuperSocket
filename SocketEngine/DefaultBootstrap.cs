@@ -7,12 +7,13 @@ using System.Net;
 using System.Runtime.Remoting;
 using System.Runtime.Remoting.Channels;
 using System.Runtime.Remoting.Channels.Ipc;
+using System.Runtime.Serialization.Formatters;
 using System.Text;
 using System.Threading;
+using AnyLog;
 using SuperSocket.Common;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
 using SuperSocket.SocketBase.Metadata;
 using SuperSocket.SocketBase.Provider;
 using SuperSocket.SocketEngine.Configuration;
@@ -22,9 +23,9 @@ namespace SuperSocket.SocketEngine
     /// <summary>
     /// SuperSocket default bootstrap
     /// </summary>
-    public partial class DefaultBootstrap : IBootstrap, IDisposable
+    public partial class DefaultBootstrap : IBootstrap, ILoggerProvider, IDisposable
     {
-        private List<IWorkItem> m_AppServers;
+        private List<IManagedApp> m_AppServers;
 
         /// <summary>
         /// Indicates whether the bootstrap is initialized
@@ -42,14 +43,22 @@ namespace SuperSocket.SocketEngine
         private ILog m_GlobalLog;
 
         /// <summary>
+        /// Gets the bootstrap logger.
+        /// </summary>
+        ILog ILoggerProvider.Logger
+        {
+            get { return m_GlobalLog; }
+        }
+
+        /// <summary>
         /// Gets the log factory.
         /// </summary>
-        protected ILogFactory LogFactory { get; private set; }
+        protected ILoggerFactory LoggerFactory { get; private set; }
 
         /// <summary>
         /// Gets all the app servers running in this bootstrap
         /// </summary>
-        public IEnumerable<IWorkItem> AppServers
+        public IEnumerable<IManagedApp> AppServers
         {
             get { return m_AppServers; }
         }
@@ -101,11 +110,31 @@ namespace SuperSocket.SocketEngine
         partial void SetDefaultCulture(IRootConfig rootConfig);
 
         /// <summary>
+        /// Gets the bootstrap log factory.
+        /// </summary>
+        /// <returns></returns>
+        private static ILoggerFactory GetBootstrapLoggerFactory()
+        {
+            return GetBootstrapLoggerFactory(string.Empty);
+        }
+
+        /// <summary>
+        /// Gets the bootstrap logger factory.
+        /// </summary>
+        /// <param name="loggerFactory">The selected logger factory.</param>
+        /// <returns></returns>
+        private static ILoggerFactory GetBootstrapLoggerFactory(string loggerFactory)
+        {
+            AnyLog.LoggerFactory.Configurate(AppDomain.CurrentDomain.GetCurrentAppDomainExportProvider(), loggerFactory);
+            return AnyLog.LoggerFactory.Current;
+        }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="DefaultBootstrap"/> class.
         /// </summary>
         /// <param name="appServers">The app servers.</param>
-        public DefaultBootstrap(IEnumerable<IWorkItem> appServers)
-            : this(new RootConfig(), appServers, new Log4NetLogFactory())
+        public DefaultBootstrap(IEnumerable<IManagedApp> appServers)
+            : this(new RootConfig(), appServers, GetBootstrapLoggerFactory())
         {
 
         }
@@ -115,8 +144,8 @@ namespace SuperSocket.SocketEngine
         /// </summary>
         /// <param name="rootConfig">The root config.</param>
         /// <param name="appServers">The app servers.</param>
-        public DefaultBootstrap(IRootConfig rootConfig, IEnumerable<IWorkItem> appServers)
-            : this(rootConfig, appServers, new Log4NetLogFactory())
+        public DefaultBootstrap(IRootConfig rootConfig, IEnumerable<IManagedApp> appServers)
+            : this(rootConfig, appServers, GetBootstrapLoggerFactory())
         {
 
         }
@@ -126,8 +155,8 @@ namespace SuperSocket.SocketEngine
         /// </summary>
         /// <param name="rootConfig">The root config.</param>
         /// <param name="appServers">The app servers.</param>
-        /// <param name="logFactory">The log factory.</param>
-        public DefaultBootstrap(IRootConfig rootConfig, IEnumerable<IWorkItem> appServers, ILogFactory logFactory)
+        /// <param name="loggerFactory">The logger factory.</param>
+        public DefaultBootstrap(IRootConfig rootConfig, IEnumerable<IManagedApp> appServers, ILoggerFactory loggerFactory)
         {
             if (rootConfig == null)
                 throw new ArgumentNullException("rootConfig");
@@ -138,7 +167,7 @@ namespace SuperSocket.SocketEngine
             if(!appServers.Any())
                 throw new ArgumentException("appServers must have one item at least", "appServers");
 
-            if (logFactory == null)
+            if (loggerFactory == null)
                 throw new ArgumentNullException("logFactory");
 
             m_RootConfig = rootConfig;
@@ -147,13 +176,13 @@ namespace SuperSocket.SocketEngine
 
             m_AppServers = appServers.ToList();
 
-            m_GlobalLog = logFactory.GetLog(this.GetType().Name);
+            m_GlobalLog = loggerFactory.GetCurrentClassLogger();
 
             AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CurrentDomain_UnhandledException);
 
             if (!rootConfig.DisablePerformanceDataCollector)
             {
-                m_PerfMonitor = new PerformanceMonitor(rootConfig, m_AppServers, null, logFactory);
+                m_PerfMonitor = new PerformanceMonitor(rootConfig, m_AppServers, null, loggerFactory);
 
                 if (m_GlobalLog.IsDebugEnabled)
                     m_GlobalLog.Debug("The PerformanceMonitor has been initialized!");
@@ -210,42 +239,16 @@ namespace SuperSocket.SocketEngine
         /// Creates the work item instance.
         /// </summary>
         /// <param name="serviceTypeName">Name of the service type.</param>
-        /// <param name="serverStatusMetadata">The server status metadata.</param>
         /// <returns></returns>
-        protected virtual IWorkItem CreateWorkItemInstance(string serviceTypeName, StatusInfoAttribute[] serverStatusMetadata)
+        protected virtual IManagedApp CreateWorkItemInstance(string serviceTypeName)
         {
             var serviceType = Type.GetType(serviceTypeName, true);
-            return Activator.CreateInstance(serviceType) as IWorkItem;
+            return Activator.CreateInstance(serviceType) as IManagedApp;
         }
 
-        internal virtual bool SetupWorkItemInstance(IWorkItem workItem, WorkItemFactoryInfo factoryInfo)
+        internal virtual bool SetupWorkItemInstance(IManagedApp workItem, IServerConfig serverConfig)
         {
-            try
-            {
-                //Share AppDomain AppServers also share same socket server factory and log factory instances
-                factoryInfo.SocketServerFactory.ExportFactory.EnsureInstance();
-                factoryInfo.LogFactory.ExportFactory.EnsureInstance();
-            }
-            catch (Exception e)
-            {
-                if (m_GlobalLog.IsErrorEnabled)
-                    m_GlobalLog.Error(e);
-
-                return false;
-            }
-
-            return workItem.Setup(this, factoryInfo.Config, factoryInfo.ProviderFactories.ToArray());
-        }
-
-        /// <summary>
-        /// Gets the work item factory info loader.
-        /// </summary>
-        /// <param name="config">The config.</param>
-        /// <param name="logFactory">The log factory.</param>
-        /// <returns></returns>
-        internal virtual WorkItemFactoryInfoLoader GetWorkItemFactoryInfoLoader(IConfigurationSource config, ILogFactory logFactory)
-        {
-            return new WorkItemFactoryInfoLoader(config, logFactory);
+            return workItem.Setup(this, serverConfig);
         }
 
         /// <summary>
@@ -309,73 +312,71 @@ namespace SuperSocket.SocketEngine
         /// Initializes the bootstrap with the configuration, config resolver and log factory.
         /// </summary>
         /// <param name="serverConfigResolver">The server config resolver.</param>
-        /// <param name="logFactory">The log factory.</param>
+        /// <param name="loggerFactory">The logger factory.</param>
         /// <returns></returns>
-        public virtual bool Initialize(Func<IServerConfig, IServerConfig> serverConfigResolver, ILogFactory logFactory)
+        public virtual bool Initialize(Func<IServerConfig, IServerConfig> serverConfigResolver, ILoggerFactory loggerFactory)
         {
             if (m_Initialized)
                 throw new Exception("The server had been initialized already, you cannot initialize it again!");
 
-            if (logFactory != null && !string.IsNullOrEmpty(m_Config.LogFactory))
+            if (loggerFactory != null && !string.IsNullOrEmpty(m_Config.LoggerFactory))
             {
-                throw new ArgumentException("You cannot pass in a logFactory parameter, if you have configured a root log factory.", "logFactory");
+                throw new ArgumentException("You cannot pass in a logFactory parameter, if you have configured a root log factory.", "loggerFactory");
             }
 
-            IEnumerable<WorkItemFactoryInfo> workItemFactories;
-
-            using (var factoryInfoLoader = GetWorkItemFactoryInfoLoader(m_Config, logFactory))
+            if(loggerFactory == null)
             {
-                var bootstrapLogFactory = factoryInfoLoader.GetBootstrapLogFactory();
-
-                logFactory = bootstrapLogFactory.ExportFactory.CreateExport<ILogFactory>();
-
-                LogFactory = logFactory;
-                m_GlobalLog = logFactory.GetLog(this.GetType().Name);
-
-                AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CurrentDomain_UnhandledException);
-
-                try
-                {
-                    workItemFactories = factoryInfoLoader.LoadResult(serverConfigResolver);
-                }
-                catch (Exception e)
-                {
-                    if (m_GlobalLog.IsErrorEnabled)
-                        m_GlobalLog.Error(e);
-
-                    return false;
-                }
+                loggerFactory = GetBootstrapLoggerFactory(m_Config.LoggerFactory);
             }
 
-            m_AppServers = new List<IWorkItem>(m_Config.Servers.Count());
+            m_GlobalLog = loggerFactory.GetCurrentClassLogger();
 
-            IWorkItem serverManager = null;
+            AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CurrentDomain_UnhandledException);
+
+            m_AppServers = new List<IManagedApp>(m_Config.Servers.Count());
+
+            IManagedApp serverManager = null;
 
             //Initialize servers
-            foreach (var factoryInfo in workItemFactories)
+            foreach (var config in m_Config.Servers)
             {
-                IWorkItem appServer;
+                var serverConfig = config;
+
+                if (serverConfigResolver != null)
+                    serverConfig = serverConfigResolver(config);
+
+                IManagedApp appServer;
 
                 try
                 {
-                    appServer = CreateWorkItemInstance(factoryInfo.ServerType, factoryInfo.StatusInfoMetadata);
+                    var serverType = serverConfig.ServerType;
 
-                    if (factoryInfo.IsServerManager)
-                        serverManager = appServer;
-                    else if (!(appServer is IsolationAppServer))//No isolation
+                    if(string.IsNullOrEmpty(serverType) && !string.IsNullOrEmpty(serverConfig.ServerTypeName))
                     {
-                        //In isolation mode, cannot check whether is server manager in the factory info loader
-                        if (TypeValidator.IsServerManagerType(appServer.GetType()))
-                            serverManager = appServer;
+                        var serverTypeProvider = m_Config.ServerTypes.FirstOrDefault(
+                            t => t.Name.Equals(serverConfig.ServerTypeName, StringComparison.OrdinalIgnoreCase));
+
+                        if (serverTypeProvider != null)
+                            serverType = serverTypeProvider.Type;
                     }
 
+                    if (string.IsNullOrEmpty(serverType))
+                        throw new Exception("No server type configured or the configured server type was not found.");
+
+                    appServer = CreateWorkItemInstance(serverType);
+
+                    var serverMetadata = appServer.GetAppServerMetadata();
+
+                    if (serverMetadata.IsServerManager)
+                        serverManager = appServer;
+
                     if (m_GlobalLog.IsDebugEnabled)
-                        m_GlobalLog.DebugFormat("The server instance {0} has been created!", factoryInfo.Config.Name);
+                        m_GlobalLog.DebugFormat("The server instance {0} has been created!", serverConfig.Name);
                 }
                 catch (Exception e)
                 {
                     if (m_GlobalLog.IsErrorEnabled)
-                        m_GlobalLog.Error(string.Format("Failed to create server instance {0}!", factoryInfo.Config.Name), e);
+                        m_GlobalLog.Error(string.Format("Failed to create server instance {0}!", serverConfig.Name), e);
                     return false;
                 }
 
@@ -389,7 +390,7 @@ namespace SuperSocket.SocketEngine
 
                 try
                 {
-                    setupResult = SetupWorkItemInstance(appServer, factoryInfo);
+                    setupResult = SetupWorkItemInstance(appServer, serverConfig);
 
                     if (m_GlobalLog.IsDebugEnabled)
                         m_GlobalLog.DebugFormat("The server instance {0} has been initialized!", appServer.Name);
@@ -412,7 +413,7 @@ namespace SuperSocket.SocketEngine
 
             if (!m_Config.DisablePerformanceDataCollector)
             {
-                m_PerfMonitor = new PerformanceMonitor(m_Config, m_AppServers, serverManager, logFactory);
+                m_PerfMonitor = new PerformanceMonitor(m_Config, m_AppServers, serverManager, LoggerFactory);
 
                 if (m_GlobalLog.IsDebugEnabled)
                     m_GlobalLog.Debug("The PerformanceMonitor has been initialized!");
@@ -440,7 +441,7 @@ namespace SuperSocket.SocketEngine
 
         void exceptionSource_ExceptionThrown(object sender, ErrorEventArgs e)
         {
-            m_GlobalLog.Error(string.Format("The server {0} threw an exception.", ((IWorkItemBase)sender).Name), e.Exception);
+            m_GlobalLog.Error(string.Format("The server {0} threw an exception.", ((IManagedAppBase)sender).Name), e.Exception);
         }
 
         void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
@@ -461,11 +462,11 @@ namespace SuperSocket.SocketEngine
         /// <summary>
         /// Initializes the bootstrap with the configuration
         /// </summary>
-        /// <param name="logFactory">The log factory.</param>
+        /// <param name="loggerFactory">The logger factory.</param>
         /// <returns></returns>
-        public virtual bool Initialize(ILogFactory logFactory)
+        public virtual bool Initialize(ILoggerFactory loggerFactory)
         {
-            return Initialize(c => c, logFactory);
+            return Initialize(c => c, loggerFactory);
         }
 
         /// <summary>
@@ -577,7 +578,7 @@ namespace SuperSocket.SocketEngine
             if (serverChannel != null)
                 ChannelServices.UnregisterChannel(serverChannel);
 
-            serverChannel = new IpcServerChannel(serverChannelName, bootstrapIpcPort);
+            serverChannel = new IpcServerChannel(serverChannelName, bootstrapIpcPort, new BinaryServerFormatterSinkProvider { TypeFilterLevel = TypeFilterLevel.Full });
             ChannelServices.RegisterChannel(serverChannel, false);
 
             AppDomain.CurrentDomain.SetData("BootstrapIpcPort", bootstrapIpcPort);

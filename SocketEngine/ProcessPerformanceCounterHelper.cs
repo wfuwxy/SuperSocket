@@ -52,6 +52,10 @@ namespace SuperSocket.SocketEngine
             var isUnix = Environment.OSVersion.Platform == PlatformID.Unix || Environment.OSVersion.Platform == PlatformID.MacOSX;
             var instanceName = (isUnix || Platform.IsMono) ? string.Format("{0}/{1}", m_Process.Id, m_Process.ProcessName) : GetPerformanceCounterInstanceName(m_Process);
 
+            // the process has exited
+            if (string.IsNullOrEmpty(instanceName))
+                return;
+
             SetupPerformanceCounters(instanceName);
         }
 
@@ -62,7 +66,7 @@ namespace SuperSocket.SocketEngine
             m_WorkingSetPC = new PerformanceCounter("Process", "Working Set", instanceName);
         }
 
-        //Tt is only used in windows
+        // This method is only used in windows
         private static string GetPerformanceCounterInstanceName(Process process)
         {
             var processId = process.Id;
@@ -74,9 +78,23 @@ namespace SuperSocket.SocketEngine
                 if (!runnedInstance.StartsWith(process.ProcessName, StringComparison.OrdinalIgnoreCase))
                     continue;
 
+                if (process.HasExited)
+                    return string.Empty;
+
                 using (var performanceCounter = new PerformanceCounter("Process", "ID Process", runnedInstance, true))
                 {
-                    if ((int)performanceCounter.RawValue == processId)
+                    var counterProcessId = 0;
+
+                    try
+                    {
+                        counterProcessId = (int)performanceCounter.RawValue;
+                    }
+                    catch //that process has been shutdown
+                    {
+                        continue;
+                    }
+
+                    if (counterProcessId == processId)
                     {
                         return runnedInstance;
                     }
@@ -124,6 +142,10 @@ namespace SuperSocket.SocketEngine
                     //If a same name process exited, this process's performance counters instance name could be changed,
                     //so if the old performance counter cannot be access, get the performance counter's name again
                     var newInstanceName = GetPerformanceCounterInstanceName(m_Process);
+
+                    if (string.IsNullOrEmpty(newInstanceName))
+                        break;
+
                     SetupPerformanceCounters(newInstanceName);
                     retry = true;
                 }

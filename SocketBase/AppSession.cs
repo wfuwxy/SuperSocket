@@ -9,7 +9,7 @@ using System.Threading;
 using SuperSocket.Common;
 using SuperSocket.SocketBase.Command;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
 using SuperSocket.SocketBase.Protocol;
 using SuperSocket.ProtoBase;
 
@@ -33,7 +33,7 @@ namespace SuperSocket.SocketBase
     /// <typeparam name="TAppSession">The type of the app session.</typeparam>
     /// <typeparam name="TPackageInfo">The type of the request info.</typeparam>
     /// <typeparam name="TKey">The type of the package key.</typeparam>
-    public abstract class AppSession<TAppSession, TPackageInfo, TKey> : IAppSession, IAppSession<TAppSession, TPackageInfo>, IPackageHandler<TPackageInfo>, IThreadExecutingContext
+    public abstract class AppSession<TAppSession, TPackageInfo, TKey> : IAppSession, IAppSession<TAppSession, TPackageInfo>, IPackageHandler<TPackageInfo>, IThreadExecutingContext, ICommunicationChannel
         where TAppSession : AppSession<TAppSession, TPackageInfo, TKey>, IAppSession, new()
         where TPackageInfo : class, IPackageInfo, IPackageInfo<TKey>
     {
@@ -168,6 +168,14 @@ namespace SuperSocket.SocketBase
         public ISocketSession SocketSession { get; private set; }
 
         /// <summary>
+        /// Gets the proto handler.
+        /// </summary>
+        /// <value>
+        /// The proto handler.
+        /// </value>
+        public IProtoHandler ProtoHandler { get; private set; }
+
+        /// <summary>
         /// Gets the config of the server.
         /// </summary>
         public IServerConfig Config
@@ -206,11 +214,20 @@ namespace SuperSocket.SocketBase
             OnInit();
         }
 
+        /// <summary>
+        /// Gets the maximum allowed length of the request.
+        /// </summary>
+        /// <returns></returns>
+        protected virtual int GetMaxRequestLength()
+        {
+            return AppServer.Config.MaxRequestLength;
+        }
+
         IPipelineProcessor IAppSession.CreatePipelineProcessor()
         {
             var receiveFilterFactory = AppServer.ReceiveFilterFactory;
             var receiveFilter = receiveFilterFactory.CreateFilter(AppServer, this, SocketSession.RemoteEndPoint);
-            return new DefaultPipelineProcessor<TPackageInfo>(this, receiveFilter, AppServer.Config.MaxRequestLength, SocketSession as IBufferRecycler);
+            return new DefaultPipelineProcessor<TPackageInfo>(this, receiveFilter, GetMaxRequestLength(), SocketSession as IBufferRecycler);
         }
 
         /// <summary>
@@ -282,7 +299,15 @@ namespace SuperSocket.SocketBase
         /// <param name="reason">The close reason.</param>
         public virtual void Close(CloseReason reason)
         {
-            this.SocketSession.Close(reason);
+            var protoHandler = ProtoHandler;
+
+            if (protoHandler != null)
+            {
+                protoHandler.Close(this, reason);
+                return;
+            }                
+
+            SocketSession.Close(reason);
         }
 
         /// <summary>
@@ -296,27 +321,6 @@ namespace SuperSocket.SocketBase
         #region Sending processing
 
         /// <summary>
-        /// Try to send the message to client.
-        /// </summary>
-        /// <param name="message">The message which will be sent.</param>
-        /// <returns>Indicate whether the message was pushed into the sending queue</returns>
-        public virtual bool TrySend(string message)
-        {
-            var data = this.Charset.GetBytes(message);
-            return InternalTrySend(new ArraySegment<byte>(data, 0, data.Length));
-        }
-
-        /// <summary>
-        /// Sends the message to client.
-        /// </summary>
-        /// <param name="message">The message which will be sent.</param>
-        public virtual void Send(string message)
-        {
-            var data = this.Charset.GetBytes(message);
-            Send(data, 0, data.Length);
-        }
-
-        /// <summary>
         /// Try to send the data to client.
         /// </summary>
         /// <param name="data">The data which will be sent.</param>
@@ -325,7 +329,7 @@ namespace SuperSocket.SocketBase
         /// <returns>Indicate whether the message was pushed into the sending queue</returns>
         public virtual bool TrySend(byte[] data, int offset, int length)
         {
-            return InternalTrySend(new ArraySegment<byte>(data, offset, length));
+            return AppServer.ProtoSender.TrySend(SocketSession, ProtoHandler, new ArraySegment<byte>(data, offset, length));
         }
 
         /// <summary>
@@ -336,16 +340,7 @@ namespace SuperSocket.SocketBase
         /// <param name="length">The length.</param>
         public virtual void Send(byte[] data, int offset, int length)
         {
-            InternalSend(new ArraySegment<byte>(data, offset, length));
-        }
-
-        private bool InternalTrySend(ArraySegment<byte> segment)
-        {
-            if (!SocketSession.TrySend(segment))
-                return false;
-
-            LastActiveTime = DateTime.Now;
-            return true;
+            AppServer.ProtoSender.Send(SocketSession, ProtoHandler, new ArraySegment<byte>(data, offset, length));
         }
 
         /// <summary>
@@ -355,46 +350,7 @@ namespace SuperSocket.SocketBase
         /// <returns>Indicate whether the message was pushed into the sending queue</returns>
         public virtual bool TrySend(ArraySegment<byte> segment)
         {
-            if (!m_Connected)
-                return false;
-
-            return InternalTrySend(segment);
-        }
-
-
-        private void InternalSend(ArraySegment<byte> segment)
-        {
-            if (!m_Connected)
-                return;
-
-            if (InternalTrySend(segment))
-                return;
-
-            var sendTimeOut = Config.SendTimeOut;
-
-            //Don't retry, timeout directly
-            if (sendTimeOut < 0)
-            {
-                throw new TimeoutException("The sending attempt timed out");
-            }
-
-            var timeOutTime = sendTimeOut > 0 ? DateTime.Now.AddMilliseconds(sendTimeOut) : DateTime.Now;
-
-            var spinWait = new SpinWait();
-
-            while (m_Connected)
-            {
-                spinWait.SpinOnce();
-
-                if (InternalTrySend(segment))
-                    return;
-
-                //If sendTimeOut = 0, don't have timeout check
-                if (sendTimeOut > 0 && DateTime.Now >= timeOutTime)
-                {
-                    throw new TimeoutException("The sending attempt timed out");
-                }
-            }
+            return AppServer.ProtoSender.TrySend(SocketSession, ProtoHandler, segment);
         }
 
         /// <summary>
@@ -403,16 +359,7 @@ namespace SuperSocket.SocketBase
         /// <param name="segment">The segment which will be sent.</param>
         public virtual void Send(ArraySegment<byte> segment)
         {
-            InternalSend(segment);
-        }
-
-        private bool InternalTrySend(IList<ArraySegment<byte>> segments)
-        {
-            if (!SocketSession.TrySend(segments))
-                return false;
-
-            LastActiveTime = DateTime.Now;
-            return true;
+            AppServer.ProtoSender.Send(SocketSession, ProtoHandler, segment);
         }
 
         /// <summary>
@@ -422,45 +369,7 @@ namespace SuperSocket.SocketBase
         /// <returns>Indicate whether the message was pushed into the sending queue; if it returns false, the sending queue may be full or the socket is not connected</returns>
         public virtual bool TrySend(IList<ArraySegment<byte>> segments)
         {
-            if (!m_Connected)
-                return false;
-
-            return InternalTrySend(segments);
-        }
-
-        private void InternalSend(IList<ArraySegment<byte>> segments)
-        {
-            if (!m_Connected)
-                return;
-
-            if (InternalTrySend(segments))
-                return;
-
-            var sendTimeOut = Config.SendTimeOut;
-
-            //Don't retry, timeout directly
-            if (sendTimeOut < 0)
-            {
-                throw new TimeoutException("The sending attempt timed out");
-            }
-
-            var timeOutTime = sendTimeOut > 0 ? DateTime.Now.AddMilliseconds(sendTimeOut) : DateTime.Now;
-
-            var spinWait = new SpinWait();
-
-            while (m_Connected)
-            {
-                spinWait.SpinOnce();
-
-                if (InternalTrySend(segments))
-                    return;
-
-                //If sendTimeOut = 0, don't have timeout check
-                if (sendTimeOut > 0 && DateTime.Now >= timeOutTime)
-                {
-                    throw new TimeoutException("The sending attempt timed out");
-                }
-            }
+            return AppServer.ProtoSender.TrySend(SocketSession, ProtoHandler, segments);
         }
 
         /// <summary>
@@ -469,18 +378,17 @@ namespace SuperSocket.SocketBase
         /// <param name="segments">The segments.</param>
         public virtual void Send(IList<ArraySegment<byte>> segments)
         {
-            InternalSend(segments);
+            AppServer.ProtoSender.Send(SocketSession, ProtoHandler, segments);
         }
 
-        /// <summary>
-        /// Sends the response.
-        /// </summary>
-        /// <param name="message">The message which will be sent.</param>
-        /// <param name="paramValues">The parameter values.</param>
-        public virtual void Send(string message, params object[] paramValues)
+        void ICommunicationChannel.Send(ArraySegment<byte> segment)
         {
-            var data = this.Charset.GetBytes(string.Format(message, paramValues));
-            InternalSend(new ArraySegment<byte>(data, 0, data.Length));
+            SocketSession.TrySend(segment);
+        }
+
+        void ICommunicationChannel.Close(CloseReason reason)
+        {
+            SocketSession.Close(reason);
         }
 
         #endregion
@@ -548,28 +456,14 @@ namespace SuperSocket.SocketBase
     public abstract class AppSession<TAppSession> : AppSession<TAppSession, StringPackageInfo>
         where TAppSession : AppSession<TAppSession, StringPackageInfo>, IAppSession, new()
     {
-
-        private bool m_AppendNewLineForResponse = false;
-
-        private static string m_NewLine = "\r\n";
-
         /// <summary>
         /// Initializes a new instance of the <see cref="AppSession&lt;TAppSession&gt;"/> class.
         /// </summary>
         public AppSession()
-            : this(true)
         {
 
         }
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="AppSession&lt;TAppSession&gt;"/> class.
-        /// </summary>
-        /// <param name="appendNewLineForResponse">if set to <c>true</c> [append new line for response].</param>
-        public AppSession(bool appendNewLineForResponse)
-        {
-            m_AppendNewLineForResponse = appendNewLineForResponse;
-        }
 
         /// <summary>
         /// Handles the unknown request.
@@ -580,44 +474,52 @@ namespace SuperSocket.SocketBase
             Send("Unknown request: " + requestInfo.Key);
         }
 
-        /// <summary>
-        /// Processes the sending message.
-        /// </summary>
-        /// <param name="rawMessage">The raw message.</param>
-        /// <returns></returns>
-        protected virtual string ProcessSendingMessage(string rawMessage)
-        {
-            if (!m_AppendNewLineForResponse)
-                return rawMessage;
 
-            if (AppServer.Config.Mode == SocketMode.Udp)
-                return rawMessage;
-
-            if (string.IsNullOrEmpty(rawMessage) || !rawMessage.EndsWith(m_NewLine))
-                return rawMessage + m_NewLine;
-            else
-                return rawMessage;
-        }
-
-        /// <summary>
-        /// Sends the specified message.
-        /// </summary>
-        /// <param name="message">The message.</param>
-        /// <returns></returns>
-        public override void Send(string message)
-        {
-            base.Send(ProcessSendingMessage(message));
-        }
 
         /// <summary>
         /// Sends the response.
         /// </summary>
-        /// <param name="message">The message.</param>
-        /// <param name="paramValues">The param values.</param>
-        /// <returns>Indicate whether the message was pushed into the sending queue</returns>
-        public override void Send(string message, params object[] paramValues)
+        /// <param name="message">The message which will be sent.</param>
+        /// <param name="paramValues">The parameter values.</param>
+        public virtual void Send(string message, params object[] paramValues)
         {
-            base.Send(ProcessSendingMessage(message), paramValues);
+            Send(string.Format(message, paramValues));
+        }
+
+        /// <summary>
+        /// Try to send the message to client.
+        /// </summary>
+        /// <param name="message">The message which will be sent.</param>
+        /// <returns>Indicate whether the message was pushed into the sending queue</returns>
+        public virtual bool TrySend(string message)
+        {
+            var textEncoder = AppServer.TextEncoder;
+
+            if (textEncoder != null)
+            {
+                return TrySend(textEncoder.EncodeText(message));
+            }
+
+            var data = this.Charset.GetBytes(message);
+            return TrySend(new ArraySegment<byte>(data, 0, data.Length));
+        }
+
+        /// <summary>
+        /// Sends the message to client.
+        /// </summary>
+        /// <param name="message">The message which will be sent.</param>
+        public virtual void Send(string message)
+        {
+            var textEncoder = AppServer.TextEncoder;
+
+            if (textEncoder != null)
+            {
+                Send(textEncoder.EncodeText(message));
+                return;
+            }
+
+            var data = this.Charset.GetBytes(message);
+            Send(new ArraySegment<byte>(data, 0, data.Length));
         }
     }
 

@@ -32,6 +32,8 @@
     <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
+    <SolutionDir Condition="$(SolutionDir) == '' Or $(SolutionDir) == '*Undefined*'">..\</SolutionDir>
+    <RestorePackages>true</RestorePackages>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -57,7 +59,12 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="AnyLog, Version=0.1.8.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\AnyLog.0.1.8\lib\net40\AnyLog.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="System" />
+    <Reference Include="System.ComponentModel.Composition" />
     <Reference Include="System.configuration" />
     <Reference Include="System.Core">
       <RequiredTargetFramework>3.5</RequiredTargetFramework>
@@ -75,6 +82,8 @@
     <Compile Include="AppDomainBootstrap.cs" />
     <Compile Include="AssemblyImport.cs" />
     <Compile Include="BufferStateCreator.cs" />
+    <Compile Include="ConfigurationWatcher.cs" />
+    <Compile Include="IRemoteManagedApp.cs" />
     <Compile Include="SaeState.cs" />
     <Compile Include="BufferState.cs" />
     <Compile Include="IAsyncSocketEventComplete.cs" />
@@ -86,7 +95,6 @@
     <Compile Include="IExceptionSource.cs" />
     <Compile Include="IPerformanceMonitor.cs" />
     <Compile Include="IProcessServer.cs" />
-    <Compile Include="IRemoteWorkItem.cs" />
     <Compile Include="IsolationAppServer.cs" />
     <Compile Include="ProcessAppServer.cs" />
     <Compile Include="ProcessBootstrap.cs" />
@@ -99,10 +107,8 @@
     <Compile Include="ServerTypeMetadata.cs" />
     <Compile Include="SocketSession.Net.cs" />
     <Compile Include="TypeValidator.cs" />
-    <Compile Include="WorkItemFactoryInfoLoader.cs" />
     <Compile Include="IAsyncSocketSession.cs" />
     <Compile Include="DefaultBootstrap.cs" />
-    <Compile Include="WorkItemFactoryInfo.cs" />
     <Compile Include="MarshalAppServer.cs" />
     <Compile Include="PerformanceMonitor.cs" />
     <Compile Include="SocketListenerBase.cs" />
@@ -129,28 +135,6 @@
     <Compile Include="UdpSocketSession.cs" />
   </ItemGroup>
   <ItemGroup>
-    <BootstrapperPackage Include=".NETFramework,Version=v4.0">
-      <Visible>False</Visible>
-      <ProductName>Microsoft .NET Framework 4 %28x86 and x64%29</ProductName>
-      <Install>true</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Net.Client.3.5">
-      <Visible>False</Visible>
-      <ProductName>.NET Framework 3.5 SP1 Client Profile</ProductName>
-      <Install>false</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
-      <Visible>False</Visible>
-      <ProductName>.NET Framework 3.5 SP1</ProductName>
-      <Install>false</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Windows.Installer.3.1">
-      <Visible>False</Visible>
-      <ProductName>Windows Installer 3.1</ProductName>
-      <Install>true</Install>
-    </BootstrapperPackage>
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Common\SuperSocket.Common.Net40.csproj">
       <Project>{A24F4D38-BA9C-4FD6-95B7-4980DE36131A}</Project>
       <Name>SuperSocket.Common.Net40</Name>
@@ -164,7 +148,9 @@
       <Name>SuperSocket.SocketBase.Net40</Name>
     </ProjectReference>
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <None Include="packages.SuperSocket.SocketEngine.Net40.config" />
+  </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

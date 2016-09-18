@@ -10,7 +10,7 @@ using SuperSocket.Common;
 using SuperSocket.ProtoBase;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Command;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
 using SuperSocket.SocketBase.Pool;
 using SuperSocket.SocketBase.Protocol;
 using SuperSocket.SocketBase.Utils;
@@ -245,20 +245,6 @@ namespace SuperSocket.SocketEngine
             {
                 sae.Dispose();
                 base.OnClosed(reason);
-            }
-        }
-
-        protected override void ReturnBuffer(IList<KeyValuePair<ArraySegment<byte>, IBufferState>> buffers, int offset, int length)
-        {
-            for (var i = 0; i < length; i++)
-            {
-                var buffer = buffers[offset + i];
-                var state = buffer.Value as SaeState;
-
-                if (state != null && state.DecreaseReference() == 0)
-                {
-                    m_SaePoolForReceive.Return(state);
-                }
             }
         }
     }

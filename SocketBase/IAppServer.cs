@@ -10,7 +10,7 @@ using SuperSocket.Common;
 using SuperSocket.ProtoBase;
 using SuperSocket.SocketBase.Command;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
 using SuperSocket.SocketBase.Pool;
 using SuperSocket.SocketBase.Protocol;
 using SuperSocket.SocketBase.Provider;
@@ -20,7 +20,7 @@ namespace SuperSocket.SocketBase
     /// <summary>
     /// The interface for AppServer
     /// </summary>
-    public interface IAppServer : IWorkItem, ILoggerProvider, IServiceProvider
+    public interface IAppServer : IManagedApp, ILoggerProvider, IServiceProvider
     {
         /// <summary>
         /// Gets the started time.
@@ -90,9 +90,9 @@ namespace SuperSocket.SocketBase
         void ResetSessionSecurity(IAppSession session, SslProtocols security);
 
         /// <summary>
-        /// Gets the log factory.
+        /// Gets the logger factory.
         /// </summary>
-        ILogFactory LogFactory { get; }
+        ILoggerFactory LoggerFactory { get; }
 
 
         /// <summary>

@@ -16,10 +16,6 @@ namespace SuperSocket.SocketEngine
     class UdpSocketServer<TPackageInfo> : SocketServerBase
         where TPackageInfo : IPackageInfo
     {
-        private IPEndPoint m_EndPointIPv4;
-
-        private IPEndPoint m_EndPointIPv6;
-
         private bool m_IsUdpRequestInfo = false;
 
         private IReceiveFilter<TPackageInfo> m_UdpRequestFilter;
@@ -37,9 +33,6 @@ namespace SuperSocket.SocketEngine
             : base(appServer, listeners)
         {
             m_RequestHandler = appServer as IRequestHandler<TPackageInfo>;
-
-            m_EndPointIPv4 = new IPEndPoint(IPAddress.Any, 0);
-            m_EndPointIPv6 = new IPEndPoint(IPAddress.IPv6Any, 0);
 
             m_IsUdpRequestInfo = typeof(IUdpPackageInfo).IsAssignableFrom(typeof(TPackageInfo));
 
@@ -64,7 +57,7 @@ namespace SuperSocket.SocketEngine
             {
                 if (m_IsUdpRequestInfo)
                 {
-                    ProcessPackageWithSessionID(client, remoteEndPoint, receivedData);
+                    ProcessPackageWithSessionID(client, remoteEndPoint, receivedData, saeState);
                 }
                 else
                 {
@@ -82,7 +75,7 @@ namespace SuperSocket.SocketEngine
             }
         }
 
-        void ProcessPackageWithSessionID(Socket listenSocket, IPEndPoint remoteEndPoint, ArraySegment<byte> receivedData)
+        void ProcessPackageWithSessionID(Socket listenSocket, IPEndPoint remoteEndPoint, ArraySegment<byte> receivedData, SaeState saeState)
         {
             TPackageInfo requestInfo;
 
@@ -93,7 +86,7 @@ namespace SuperSocket.SocketEngine
             try
             {
                 var receiveData = new BufferList();
-                receiveData.Add(receivedData);
+                receiveData.Add(receivedData, saeState);
 
                 requestInfo = this.m_UdpRequestFilter.Filter(receiveData, out rest);
             }

@@ -8,7 +8,7 @@ using System.Threading;
 using SuperSocket.Common;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
 using SuperSocket.SocketBase.Metadata;
 
 namespace SuperSocket.SocketEngine
@@ -19,19 +19,19 @@ namespace SuperSocket.SocketEngine
 
         private Timer m_PerformanceTimer;
         private int m_TimerInterval;
-        private ILog m_PerfLog;
+        private ILog m_PerfLogger;
 
-        private IWorkItem[] m_AppServers;
+        private IManagedApp[] m_AppServers;
 
-        private IWorkItem m_ServerManager;
+        private IManagedApp m_ServerManager;
 
         private ProcessPerformanceCounterHelper m_Helper;
 
         private List<KeyValuePair<string, StatusInfoAttribute[]>> m_ServerStatusMetadataSource;
 
-        public PerformanceMonitor(IRootConfig config, IEnumerable<IWorkItem> appServers, IWorkItem serverManager, ILogFactory logFactory)
+        public PerformanceMonitor(IRootConfig config, IEnumerable<IManagedApp> appServers, IManagedApp serverManager, ILoggerFactory logFactory)
         {
-            m_PerfLog = logFactory.GetLog("Performance");
+            m_PerfLogger = logFactory.GetLogger("Performance");
 
             m_AppServers = appServers.ToArray();
 
@@ -66,7 +66,8 @@ namespace SuperSocket.SocketEngine
                 {
                     var server = m_AppServers[i];
                     m_ServerStatusMetadataSource.Add(
-                        new KeyValuePair<string, StatusInfoAttribute[]>(server.Name, server.GetServerStatusMetadata().OrderBy(s => s.Order).ToArray()));
+                        new KeyValuePair<string, StatusInfoAttribute[]>(server.Name,
+                            server.GetAppServerMetadata().StatusFields.OrderBy(s => s.Order).ToArray()));
                 }
 
                 if (m_ServerManager != null && m_ServerManager.State == ServerState.Running)
@@ -118,7 +119,20 @@ namespace SuperSocket.SocketEngine
                 }
                 else
                 {
-                    var serverStatus = s.CollectServerStatus(bootstrapStatus);
+                    StatusInfoCollection serverStatus;
+
+                    try
+                    {
+                        serverStatus = s.CollectServerStatus(bootstrapStatus);
+                    }
+                    catch (Exception e)
+                    {
+                        m_PerfLogger.Error("Failed to CollectServerStatus of " + s.Name, e);
+
+                        perfBuilder.AppendLine(string.Format("{0} ----------------------------------", s.Name));
+                        perfBuilder.AppendLine(string.Format("{0}: {1}", "State", s.State));
+                        continue;
+                    }
 
                     instancesStatus.Add(serverStatus);
 
@@ -143,7 +157,7 @@ namespace SuperSocket.SocketEngine
                 }
             }
 
-            m_PerfLog.Info(perfBuilder.ToString());
+            m_PerfLogger.Info(perfBuilder.ToString());
 
             nodeStatus.InstancesStatus = instancesStatus.ToArray();
 

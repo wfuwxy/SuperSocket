@@ -6,63 +6,63 @@ using System.Text;
 using SuperSocket.Common;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Config;
-using SuperSocket.SocketBase.Logging;
+using AnyLog;
 using SuperSocket.SocketBase.Provider;
 using SuperSocket.SocketEngine.Configuration;
 using SuperSocket.SocketBase.Metadata;
 
 namespace SuperSocket.SocketEngine
 {
-    class AppDomainWorkItemFactoryInfoLoader : WorkItemFactoryInfoLoader
-    {
-        public AppDomainWorkItemFactoryInfoLoader(IConfigurationSource config, ILogFactory passedInLogFactory)
-            : base(config, passedInLogFactory)
-        {
-            InitliazeValidationAppDomain();
-        }
+    //class AppDomainWorkItemFactoryInfoLoader : WorkItemFactoryInfoLoader
+    //{
+    //    public AppDomainWorkItemFactoryInfoLoader(IConfigurationSource config, ILogFactory passedInLogFactory)
+    //        : base(config, passedInLogFactory)
+    //    {
+    //        InitliazeValidationAppDomain();
+    //    }
 
-        public AppDomainWorkItemFactoryInfoLoader(IConfigurationSource config)
-            : base(config)
-        {
-            InitliazeValidationAppDomain();
-        }
+    //    public AppDomainWorkItemFactoryInfoLoader(IConfigurationSource config)
+    //        : base(config)
+    //    {
+    //        InitliazeValidationAppDomain();
+    //    }
 
-        private AppDomain m_ValidationAppDomain;
+    //    private AppDomain m_ValidationAppDomain;
 
-        private TypeValidator m_Validator;
+    //    private TypeValidator m_Validator;
 
-        private void InitliazeValidationAppDomain()
-        {
-            m_ValidationAppDomain = AppDomain.CreateDomain("ValidationDomain", AppDomain.CurrentDomain.Evidence, AppDomain.CurrentDomain.BaseDirectory, string.Empty, false);
+    //    private void InitliazeValidationAppDomain()
+    //    {
+    //        m_ValidationAppDomain = AppDomain.CreateDomain("ValidationDomain", AppDomain.CurrentDomain.Evidence, AppDomain.CurrentDomain.BaseDirectory, string.Empty, false);
 
-            var validatorType = typeof(TypeValidator);
-            m_Validator = (TypeValidator)m_ValidationAppDomain.CreateInstanceAndUnwrap(validatorType.Assembly.FullName, validatorType.FullName);
-        }
+    //        var validatorType = typeof(TypeValidator);
+    //        m_Validator = (TypeValidator)m_ValidationAppDomain.CreateInstanceAndUnwrap(validatorType.Assembly.FullName, validatorType.FullName);
+    //    }
 
-        protected override string ValidateProviderType(string typeName)
-        {
-            if (!m_Validator.ValidateTypeName(typeName))
-                throw new Exception(string.Format("Failed to load type {0}!", typeName));
+    //    protected override string ValidateProviderType(string typeName)
+    //    {
+    //        if (!m_Validator.ValidateTypeName(typeName))
+    //            throw new Exception(string.Format("Failed to load type {0}!", typeName));
 
-            return typeName;
-        }
+    //        return typeName;
+    //    }
 
-        protected override ServerTypeMetadata GetServerTypeMetadata(string typeName)
-        {
-            return m_Validator.GetServerTypeMetadata(typeName);
-        }
+    //    protected override ServerTypeMetadata GetServerTypeMetadata(string typeName)
+    //    {
+    //        return m_Validator.GetServerTypeMetadata(typeName);
+    //    }
 
-        public override void Dispose()
-        {
-            if (m_ValidationAppDomain != null)
-            {
-                AppDomain.Unload(m_ValidationAppDomain);
-                m_ValidationAppDomain = null;
-            }
+    //    public override void Dispose()
+    //    {
+    //        if (m_ValidationAppDomain != null)
+    //        {
+    //            AppDomain.Unload(m_ValidationAppDomain);
+    //            m_ValidationAppDomain = null;
+    //        }
 
-            base.Dispose();
-        }
-    }
+    //        base.Dispose();
+    //    }
+    //}
 
     class DefaultBootstrapAppDomainWrap : DefaultBootstrap
     {
@@ -74,33 +74,53 @@ namespace SuperSocket.SocketEngine
             m_Bootstrap = bootstrap;
         }
 
-        protected override IWorkItem CreateWorkItemInstance(string serviceTypeName, StatusInfoAttribute[] serverStatusMetadata)
+        protected AppServerMetadata GetServerTypeMetadata(string serviceTypeName)
         {
-            return new AppDomainAppServer(serviceTypeName, serverStatusMetadata);
+            AppDomain validateDomain = null;
+            AppServerMetadata metadata = null;
+
+            try
+            {
+                validateDomain = AppDomain.CreateDomain("ValidationDomain", AppDomain.CurrentDomain.Evidence, AppDomain.CurrentDomain.BaseDirectory, string.Empty, false);
+                AssemblyImport.RegisterAssembplyImport(validateDomain);
+
+                var validatorType = typeof(TypeValidator);
+                var validator = (TypeValidator)validateDomain.CreateInstanceAndUnwrap(validatorType.Assembly.FullName, validatorType.FullName);
+
+                metadata = validator.GetServerTypeMetadata(serviceTypeName);
+            }
+            finally
+            {
+                if (validateDomain != null)
+                    AppDomain.Unload(validateDomain);
+            }
+
+            return metadata;
         }
 
-        internal override bool SetupWorkItemInstance(IWorkItem workItem, WorkItemFactoryInfo factoryInfo)
+        protected override IManagedApp CreateWorkItemInstance(string serviceTypeName)
         {
-            return workItem.Setup(m_Bootstrap, factoryInfo.Config, factoryInfo.ProviderFactories.ToArray());
+            var metadata = GetServerTypeMetadata(serviceTypeName);
+            return new AppDomainAppServer(serviceTypeName, metadata);
         }
 
-        internal override WorkItemFactoryInfoLoader GetWorkItemFactoryInfoLoader(IConfigurationSource config, ILogFactory logFactory)
+        internal override bool SetupWorkItemInstance(IManagedApp workItem, IServerConfig serverConfig)
         {
-            return new AppDomainWorkItemFactoryInfoLoader(config, logFactory);
+            return workItem.Setup(m_Bootstrap, serverConfig);
         }
     }
 
     /// <summary>
     /// AppDomainBootstrap
     /// </summary>
-    class AppDomainBootstrap : MarshalByRefObject, IBootstrap, IDisposable
+    class AppDomainBootstrap : MarshalByRefObject, IBootstrap, ILoggerProvider, IDisposable
     {
         private IBootstrap m_InnerBootstrap;
 
         /// <summary>
         /// Gets all the app servers running in this bootstrap
         /// </summary>
-        public IEnumerable<IWorkItem> AppServers
+        public IEnumerable<IManagedApp> AppServers
         {
             get { return m_InnerBootstrap.AppServers; }
         }
@@ -111,6 +131,22 @@ namespace SuperSocket.SocketEngine
         public IRootConfig Config
         {
             get { return m_InnerBootstrap.Config; }
+        }
+
+        /// <summary>
+        /// Gets the bootstrap logger.
+        /// </summary>
+        ILog ILoggerProvider.Logger
+        {
+            get
+            {
+                var loggerProvider = m_InnerBootstrap as ILoggerProvider;
+
+                if (loggerProvider == null)
+                    return null;
+
+                return loggerProvider.Logger;
+            }
         }
 
         /// <summary>
@@ -173,11 +209,11 @@ namespace SuperSocket.SocketEngine
         /// <summary>
         /// Initializes the bootstrap with the configuration and config resolver.
         /// </summary>
-        /// <param name="logFactory">The log factory.</param>
+        /// <param name="loggerFactory">The logger factory.</param>
         /// <returns></returns>
-        public bool Initialize(ILogFactory logFactory)
+        public bool Initialize(ILoggerFactory loggerFactory)
         {
-            return m_InnerBootstrap.Initialize(logFactory);
+            return m_InnerBootstrap.Initialize(loggerFactory);
         }
 
         /// <summary>
@@ -194,14 +230,14 @@ namespace SuperSocket.SocketEngine
         /// Initializes the bootstrap with the configuration
         /// </summary>
         /// <param name="serverConfigResolver">The server config resolver.</param>
-        /// <param name="logFactory">The log factory.</param>
+        /// <param name="loggerFactory">The logger factory.</param>
         /// <returns></returns>
-        public bool Initialize(Func<IServerConfig, IServerConfig> serverConfigResolver, ILogFactory logFactory)
+        public bool Initialize(Func<IServerConfig, IServerConfig> serverConfigResolver, ILoggerFactory loggerFactory)
         {
-            if (logFactory != null)
+            if (loggerFactory != null)
                 throw new Exception("You cannot pass in logFactory, if your isolation level is AppDomain!");
 
-            return m_InnerBootstrap.Initialize(serverConfigResolver, logFactory);
+            return m_InnerBootstrap.Initialize(serverConfigResolver, loggerFactory);
         }
 
         /// <summary>
